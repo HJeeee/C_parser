@@ -99,6 +99,7 @@ int get_lineno(void);
 // Memory tracking functions
 char* tracked_strdup(const char* str);
 void cleanup_all_memory(void);
+void untrack_pointer(void* ptr);
 char* copy_string(const char* str);
 
 #endif

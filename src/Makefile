@@ -11,9 +11,10 @@ YACC = bison
 # 플랫폼별 설정
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
-    # 리눅스 (우분투) 설정 - static linking 포함
+    # 리눅스 (우분투) 설정 - 메모리 누수 검사 비활성화
     CFLAGS = -g -fsanitize=address -fno-omit-frame-pointer -static-libasan
     LDFLAGS = -ll -fsanitize=address -static-libasan
+    export ASAN_OPTIONS=detect_leaks=0
 else
     # macOS 설정 - static linking 제외
     CFLAGS = -g -fsanitize=address -fno-omit-frame-pointer

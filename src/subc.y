@@ -8,6 +8,7 @@
 /* Prologue section */
 
 #include "subc.h"
+#include <stdlib.h>
 
 int   yylex ();
 int   yyerror (char* s);
@@ -24,16 +25,11 @@ void* tracked_malloc(size_t size);
 char* tracked_strdup(const char* str);
 void* tracked_realloc(void* ptr, size_t size);
 
-// 플랫폼별 메모리 관리 매크로
-#ifdef __linux__
-    #define MALLOC(size) malloc(size)
-    #define STRDUP(str) strdup(str)  
-    #define REALLOC(ptr, size) realloc(ptr, size)
-#else
-    #define MALLOC(size) tracked_malloc(size)
-    #define STRDUP(str) tracked_strdup(str)
-    #define REALLOC(ptr, size) tracked_realloc(ptr, size)
-#endif
+// 모든 플랫폼에서 메모리 추적 사용
+#define MALLOC(size) tracked_malloc(size)
+#define STRDUP(str) tracked_strdup(str)
+#define REALLOC(ptr, size) tracked_realloc(ptr, size)
+#define TRACKED_FREE(ptr) do { if (ptr) { untrack_pointer(ptr); free(ptr); } } while(0)
 
 // 유틸리티 함수들
 char* copy_string(const char* str) {
@@ -243,6 +239,8 @@ program
     : { 
         // 초기 전역 스코프 생성
         current_scope = create_symbol_table(NULL);
+        // 프로그램 종료 시 메모리 정리 등록
+        atexit(cleanup_all_memory);
     } ext_def_list
     ;
 
@@ -262,6 +260,7 @@ ext_def
             }
             insert_symbol($3, type, NULL);
         }
+        TRACKED_FREE($3);
     }
     | type_specifier pointers ID '[' INTEGER_CONST ']' ';' {
         if (lookup_symbol_current_scope($3)) {
@@ -270,6 +269,7 @@ ext_def
             TypeInfo* type = create_array_type($1, $5);
             insert_symbol($3, type, NULL);
         }
+        TRACKED_FREE($3);
     }
     | struct_specifier ';'
     | func_decl compound_stmt {
@@ -286,7 +286,7 @@ type_specifier
         } else {
             $$ = create_basic_type(T_INT); // 기본값
         }
-        free($1);
+        TRACKED_FREE($1);
     }
     | struct_specifier { $$ = $1; }
     ;
@@ -312,7 +312,7 @@ struct_specifier
         }
         
         $$ = type;
-        free($2);
+        TRACKED_FREE($2);
     }
     | STRUCT ID {
         SymbolEntry* entry = lookup_symbol($2);
@@ -322,7 +322,7 @@ struct_specifier
             error_incomplete();
             $$ = create_struct_type($2);
         }
-        free($2);
+        TRACKED_FREE($2);
     }
     ;
 
@@ -348,7 +348,7 @@ func_decl
             insert_symbol($3, type, func);
         }
         current_function_return_type = func->return_type;
-        free($3);
+        TRACKED_FREE($3);
 
         push_scope();
 
@@ -381,7 +381,7 @@ func_decl
             insert_symbol($3, type, func);
         }
         current_function_return_type = func->return_type;
-        free($3);
+        TRACKED_FREE($3);
 
         push_scope(); 
 
@@ -421,14 +421,14 @@ param_decl
         pd->name = STRDUP($3);
         pd->type = $2 ? create_pointer_type($1) : $1;
         $$ = pd;
-        free($3);
+        TRACKED_FREE($3);
     }
     | type_specifier pointers ID '[' INTEGER_CONST ']' {
         ParamData* pd = (ParamData*)MALLOC(sizeof(ParamData));
         pd->name = STRDUP($3);
         pd->type = create_array_type($1, $5);
         $$ = pd;
-        free($3);
+        TRACKED_FREE($3);
     }
     ;
 
@@ -446,6 +446,7 @@ def
             if ($2) type = create_pointer_type($1);
             insert_symbol($3, type, NULL);
         }
+        TRACKED_FREE($3);
     }
     | type_specifier pointers ID '[' INTEGER_CONST ']' ';' {
         if (lookup_symbol_current_scope($3)) {
@@ -454,6 +455,7 @@ def
             TypeInfo* type = create_array_type($1, $5);
             insert_symbol($3, type, NULL);
         }
+        TRACKED_FREE($3);
     }
     ;
 
@@ -634,7 +636,7 @@ unary
                 $$ = entry->type;
             }
         }
-        free($1);
+        TRACKED_FREE($1);
     }
     | '-' unary {
         if (!$2) {
@@ -748,7 +750,7 @@ unary
                 $$ = member->type;
             }
         }
-        free($3);
+        TRACKED_FREE($3);
     }
     | unary STRUCTOP ID {
         if (!$1) {
@@ -765,7 +767,7 @@ unary
                 $$ = member->type;
             }
         }
-        free($3);
+        TRACKED_FREE($3);
     }
     | unary '(' args ')' {
         SymbolEntry* entry = NULL;
@@ -1014,6 +1016,17 @@ void* tracked_realloc(void* ptr, size_t size) {
     }
     allocated_pointers[allocated_count++] = new_ptr;
     return new_ptr;
+}
+
+// 추적 목록에서 포인터 제거
+void untrack_pointer(void* ptr) {
+    for (int i = 0; i < allocated_count; i++) {
+        if (allocated_pointers[i] == ptr) {
+            // 마지막 요소를 현재 위치로 이동
+            allocated_pointers[i] = allocated_pointers[--allocated_count];
+            return;
+        }
+    }
 }
 
 // 추적된 메모리 전체 해제

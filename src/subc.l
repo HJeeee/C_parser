@@ -36,7 +36,7 @@ special_char  \\[nt]
 
   /* Keywords */
 "int"|"char"                    { 
-                                  yylval.stringVal = strdup(yytext);
+                                  yylval.stringVal = tracked_strdup(yytext);
                                   return TYPE; 
                                 }
 "struct"                        { return STRUCT; } 
@@ -51,7 +51,7 @@ special_char  \\[nt]
 
   /* Identifiers */
 {id}                            {
-                                  yylval.stringVal = strdup(yytext);
+                                  yylval.stringVal = tracked_strdup(yytext);
                                   return ID;
                                 }
 
@@ -63,7 +63,7 @@ special_char  \\[nt]
 
   /* String variables */
 \"({special_char}|[^\\\"\n])*\" {
-                                  yylval.stringVal = strdup(yytext);
+                                  yylval.stringVal = tracked_strdup(yytext);
                                   return STRING;
                                 }
 
